@@ -1,0 +1,52 @@
+version: '3'
+networks:
+  tritonserver_bridge:
+    driver: bridge
+services:
+  redis1:
+    image: redis
+    container_name: face-redis1
+    ports: 
+      - "6400:6400"
+    volumes:
+      - ./data:/data
+      - ./config/redis1.conf:/usr/local/etc/redis/redis.conf
+    profiles:
+      - dev1
+    command: redis-server /usr/local/etc/redis/redis.conf
+  redis2:
+    image: redis
+    container_name: face-redis2
+    ports: 
+      - "6401:6401"
+    volumes:
+      - ./data:/data
+      - ./config/redis2.conf:/usr/local/etc/redis/redis.conf
+    profiles:
+      - dev2
+    command: redis-server /usr/local/etc/redis/redis.conf
+
+  triton_server:
+    image: nvcr.io/nvidia/tritonserver:22.08-py3
+    container_name: triton-server
+    restart: always
+    build:
+      dockerfile: Dockerfile
+    ports: 
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+    volumes:
+      - .:/workspace/
+      - ./my_repository:/models
+      - ./requirements.txt:/opt/tritonserver/requirements.txt
+      - ./son_triton.tar.gz:/opt/tritonserver/env/son_triton.tar.gz
+    networks:
+      tritonserver_bridge:
+    profiles:
+      - triton_server
+    command: tritonserver --model-repository=/models --model-control-mode=poll --repository-poll-secs=5
+
+# docker compose -f docker-compose.yml --profile dev1 up -d
+# docker compose -f docker-compose.yml --profile "*" up -d
+# docker compose -f docker-compose.yml --profile triton_server up -d

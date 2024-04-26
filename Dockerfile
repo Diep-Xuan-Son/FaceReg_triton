@@ -1,0 +1,10 @@
+FROM nvcr.io/nvidia/tritonserver:23.08-py3
+
+WORKDIR /opt/tritonserver
+COPY requirements.txt /workspace/requirements.txt
+
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip --no-cache-dir install -r /workspace/requirements.txt
+
+# docker build -t tritonserver_mq --load --rm -f Dockerfile .
+# docker run -d -p 8000:8000 --name mq_model_serving tritonserver_mq

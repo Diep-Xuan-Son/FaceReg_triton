@@ -1,0 +1,6 @@
+torchvision
+opencv-python-headless
+scikit-learn
+scikit-image
+tritonclient[all]
+
