@@ -1,11 +1,11 @@
-import sys
+import os, sys
 import numpy as np
 import tritonclient.grpc.aio as grpcclient
 
-def get_triton_client():
+def get_triton_client(ip_address="127.0.0.1:8001"):
 	try:
 		triton_client = grpcclient.InferenceServerClient(
-			url="192.168.6.142:8001"
+			url=ip_address
 		)
 	except Exception as e:
 		print("channel creation failed: " + str(e))
