@@ -1,6 +1,6 @@
 version: '3'
 networks:
-  tritonserver_bridge:
+  mynetwork_bridge:
     driver: bridge
 services:
   redis1:
@@ -43,7 +43,7 @@ services:
       - ./requirements.txt:/opt/tritonserver/requirements.txt
       - ./son_triton.tar.gz:/opt/tritonserver/env/son_triton.tar.gz
     networks:
-      tritonserver_bridge:
+      mynetwork_bridge:
     profiles:
       - triton_server
     command: tritonserver --model-repository=/models --model-control-mode=poll --repository-poll-secs=5
@@ -60,19 +60,14 @@ services:
     build:
       dockerfile: Dockerfile_controller
     ports: 
-      - "8000:8000"
-      - "8001:8001"
-      - "8002:8002"
-    volumes:
-      - .:/workspace/
-      - ./my_repository:/models
-      - ./requirements.txt:/opt/tritonserver/requirements.txt
-      - ./son_triton.tar.gz:/opt/tritonserver/env/son_triton.tar.gz
+      - "8421:8421"
+    # volumes:
+    #   - .:/workspace/
     networks:
-      tritonserver_bridge:
+      mynetwork_bridge:
     profiles:
-      - triton_server
-    command: tritonserver --model-repository=/models --model-control-mode=poll --repository-poll-secs=5
+      - controller_ai
+    command: python3 controller.py
 
 
 # docker compose -f docker-compose.yml --profile dev1 up -d

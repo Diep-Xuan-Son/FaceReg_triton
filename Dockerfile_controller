@@ -1,12 +1,16 @@
 FROM nvidia/cuda:12.0.1-base-ubuntu20.04
-FROM ubuntu:18.04
+FROM ubuntu:20.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Ho_Chi_Minh
 
 RUN apt-get update && \
-	apt-get install python3.10 && \
+	apt-get install -y python3.10 && \
 	apt-get install -y \
 			python3-pip \
 			python3-dev \
-			ffmpeg
+			ffmpeg \
+			nano
 
 WORKDIR /controller_server
 COPY requirements.txt /controller_server/requirements.txt
@@ -18,5 +22,8 @@ RUN python3 -m pip --no-cache-dir install -r /controller_server/requirements.txt
 
 COPY ./src /controller_server
 
+# CMD ["python3", "controller.py"]
+
 # docker build -t mq/controller_ai --load --rm -f Dockerfile_controller .
-# docker run -d -p 8000:8000 --name controller_ai mq/controller_ai
+# docker run -d -p 8421:8421 --name controller_ai mq/controller_ai
+# docker run -d -p 8421:8421 -v %cd%/src/weights:/controller_server/weights --name controller_ai mq/controller_ai

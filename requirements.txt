@@ -4,9 +4,9 @@ scikit-learn
 scikit-image
 tritonclient[all]
 
-linformer==0.2.1
-vit_pytorch==1.2.9
-pyyaml==6.0.1
-pillow==9.4.0
+linformer
+vit_pytorch
+pyyaml
+pillow
 
 redis
