@@ -2,3 +2,4 @@
 __pycache__
 /data
 /src/image_test
+/src/static/*

@@ -10,7 +10,7 @@ import uvicorn
 import redis
 import time
 
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, Body
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -42,12 +42,12 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.post("/api/registerFace")
-async def registerFace(params: Person = Depends()):
+async def registerFace(params: Person = Body(...), images: List[UploadFile] = File(...)):
 	try:
 		code = params.code
 		print(code)
 		if redisClient.hexists("FaceInfor1", code):
-			return {"success": False, "code": 8004, "error": "This user has been registered!"}
+			return {"success": False, "error_code": 8004, "error": "This user has been registered!"}
 
 		path_avatar = f"{IMG_AVATAR}/{code}/face_1.jpg"
 		path_code = os.path.join(PATH_IMG_AVATAR, code)
@@ -59,7 +59,8 @@ async def registerFace(params: Person = Depends()):
 		birthday = params.birthday
 		imgs = []
 		img_infor = []
-		for i, image in enumerate(params.images):
+
+		for i, image in enumerate(images):
 			image_byte = await image.read()
 			nparr = np.fromstring(image_byte, np.uint8)
 			img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -74,7 +75,7 @@ async def registerFace(params: Person = Depends()):
 		results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface, outputs=out_retinaface)
 		croped_image = results.as_numpy("croped_image")
 		if len(croped_image)==0:
-			return {"success": False, "code": 8001, "error": "Don't find any face"}
+			return {"success": False, "error_code": 8001, "error": "Don't find any face"}
 		# print(croped_image.shape)
 		# cv2.imwrite("sadas.jpg", croped_image[0])
 		#////////////////////////////////////////////////////////////
@@ -93,10 +94,10 @@ async def registerFace(params: Person = Depends()):
 
 		return {"success": True}
 	except Exception as e:
-		return {"success": False, "code": 8008, "error": str(e)}
+		return {"success": False, "error_code": 8008, "error": str(e)}
 
 @app.post("/api/deleteUser")
-def deleteUser(codes: List[str] = Query("001099008839", description="ID of persons")):
+def deleteUser(codes: List[str] = ["001099008839"]):
 	print(codes)
 	try:
 		codes_noregister = []
@@ -104,7 +105,7 @@ def deleteUser(codes: List[str] = Query("001099008839", description="ID of perso
 			if not redisClient.hexists("FaceInfor1", code) or not redisClient.hexists("FaceFeature1", code):
 				codes_noregister.append(code)
 		if len(codes_noregister)>0:
-			return {"success": False, "code": 8006, "error": f"User {tuple(codes_noregister)} has not been registered!"}
+			return {"success": False, "error_code": 8006, "error": f"User {tuple(codes_noregister)} has not been registered!"}
 
 		redisClient.hdel("FaceInfor1", *codes)
 		redisClient.hdel("FaceFeature1", *codes)
@@ -116,7 +117,7 @@ def deleteUser(codes: List[str] = Query("001099008839", description="ID of perso
 
 		return {"success": True}
 	except Exception as e:
-		return {"success": False, "code": 8008, "error": str(e)}
+		return {"success": False, "error_code": 8008, "error": str(e)}
 
 @app.post("/api/deleteAllUser")
 def deleteAllUser():
@@ -128,14 +129,14 @@ def deleteAllUser():
 			os.mkdir(PATH_IMG_AVATAR)
 		return {"success": True}
 	except Exception as e:
-		return {"success": False, "code": 8008, "error": str(e)}
+		return {"success": False, "error_code": 8008, "error": str(e)}
 
 @app.post("/api/getInformationUser")
-def getInformationUser(codes: List[str] = Query(None)):
+def getInformationUser(codes: List[str] = []):
 	try:
 		infor_persons = {}
 		print(codes)
-		if codes is None:
+		if len(codes)==0:
 			key_infor_persons = redisClient.hkeys("FaceInfor1")
 			if len(key_infor_persons)==0:
 				return {"success": True, "information": infor_persons}
@@ -151,20 +152,20 @@ def getInformationUser(codes: List[str] = Query(None)):
 					continue
 				infor_person = redisClient.hget("FaceInfor1", code)
 				infor_person = infor_person.decode("utf-8").split("@@@")
-				infor_persons[code] = {"ID": infor_person[0], \
-										"Name": infor_person[1], \
-										"Birthday": infor_person[2], \
-										"Avatar": infor_person[3]
+				infor_persons[code] = {"id": infor_person[0], \
+										"name": infor_person[1], \
+										"birthday": infor_person[2], \
+										"avatar": infor_person[3]
 										}
 		return {"success": True, "information": infor_persons}
 	except Exception as e:
-		return {"success": False, "code": 8008, "error": str(e)}
+		return {"success": False, "error_code": 8008, "error": str(e)}
 
 @app.post("/api/searchUser")
 async def searchUser(image: UploadFile = File(...)):
 	id_faces = redisClient.hkeys("FaceFeature1")
 	if len(id_faces) == 0:
-		return {"success": False, "code": 8000, "error": "Don't have any registered user"}
+		return {"success": False, "error_code": 8000, "error": "Don't have any registered user"}
 	image_byte = await image.read()
 	nparr = np.fromstring(image_byte, np.uint8)
 	img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -174,14 +175,14 @@ async def searchUser(image: UploadFile = File(...)):
 	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface, outputs=out_retinaface)
 	croped_image = results.as_numpy("croped_image")
 	if len(croped_image)==0:
-		return {"success": False, "code": 8001, "error": "Don't find any face"}
+		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
 	#---------------spoofing--------------
 	result = spoofingdet.inference([img])[0]
 	print("---------result_spoofing", result)
 	if result[1] > 0.85:
 		img_list = os.listdir("./image_test")
 		cv2.imwrite(f"./image_test/{len(img_list)}.jpg", img)
-		return {"success": False, "code": 8002, "error": "Fake face image"}
+		return {"success": False, "error_code": 8002, "error": "Fake face image"}
 	#//////////////////////////////////////
 	#////////////////////////////////////////////////////////////
 	print("------Duration det: ", time.time()-t_det)
@@ -224,9 +225,34 @@ async def searchUser(image: UploadFile = File(...)):
 	#/////////////////////////////////////////////////////////////
 	print("------Duration db: ", time.time()-t_comp)
 	if infor_face is None:
-		return {"success": False, "code": 8003, "error": "Don't find any user"}
+		return {"success": False, "error_code": 8003, "error": "Don't find any user"}
+	print(infor_face)
 	infor_face = infor_face.decode("utf-8").split("@@@")
-	return {"success": True, "Information": {"code": infor_face[0], "name": infor_face[1], "birthday": infor_face[2], "avatar": infor_face[3], "similarity": float(similarity_best)}}
+	return {"success": True, "information": {"code": infor_face[0], "name": infor_face[1], "birthday": infor_face[2], "avatar": infor_face[3], "similarity": float(similarity_best)}}
+
+@app.post("/api/spoofingCheck")
+async def spoofingCheck(image: UploadFile = File(...)):
+	try:
+		image_byte = await image.read()
+		nparr = np.fromstring(image_byte, np.uint8)
+		img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+		#---------------------------face det-------------------------
+		in_retinaface, out_retinaface = get_io_retinaface(img)
+		results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface, outputs=out_retinaface)
+		croped_image = results.as_numpy("croped_image")
+		if len(croped_image)==0:
+			return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+		#---------------spoofing--------------
+		result = spoofingdet.inference([img])[0]
+		print("---------result_spoofing", result)
+		if result[1] > 0.85:
+			# img_list = os.listdir("./image_test")
+			# cv2.imwrite(f"./image_test/{len(img_list)}.jpg", img)
+			return {"success": False, "error_code": 8002, "error": "Fake face image"}
+		return {"success": True}
+		#//////////////////////////////////////
+	except Exception as e:
+		return {"success": False, "error": str(e)}
 
 if __name__=="__main__":
 	host = "0.0.0.0"
