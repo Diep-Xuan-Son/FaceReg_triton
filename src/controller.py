@@ -29,10 +29,10 @@ spoofingdet = SpoofDetectionRunnable(**{"model_path": f"{str(ROOT)}/weights/spoo
 									"device": 'cpu',
 									"cls_names": ['authentic', 'fake']})
 
-TRITONSERVER_IP = os.getenv('TRITONSERVER_IP') if os.getenv('TRITONSERVER_IP') is not None else "192.168.6.142"
-TRITONSERVER_PORT = os.getenv('TRITONSERVER_PORT') if os.getenv('TRITONSERVER_PORT') is not None else 8001
-REDISSERVER_IP = os.getenv('REDISSERVER_IP') if os.getenv('REDISSERVER_IP') is not None else "192.168.6.142"
-REDISSERVER_PORT = os.getenv('REDISSERVER_PORT') if os.getenv('REDISSERVER_PORT') is not None else 6400
+TRITONSERVER_IP = os.getenv('TRITONSERVER_IP', "192.168.6.142")
+TRITONSERVER_PORT = os.getenv('TRITONSERVER_PORT', 8001)
+REDISSERVER_IP = os.getenv('REDISSERVER_IP', "192.168.6.142")
+REDISSERVER_PORT = os.getenv('REDISSERVER_PORT', 6400)
 tritonClient = get_triton_client(ip_address=f"{TRITONSERVER_IP}:{TRITONSERVER_PORT}")
 redisClient = redis.StrictRedis(host=REDISSERVER_IP,
 								port=int(REDISSERVER_PORT),
