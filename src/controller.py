@@ -18,16 +18,18 @@ from schemes import *
 from triton_services import *
 
 from service_ai.spoof_detection import SpoofDetectionRunnable
+from service_ai.spoof_detection_onnx import FakeFace
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]
 IMG_AVATAR = "static/avatar"
 PATH_IMG_AVATAR = f"{str(ROOT)}/{IMG_AVATAR}"
 
-spoofingdet = SpoofDetectionRunnable(**{"model_path": f"{str(ROOT)}/weights/spoofing.pt",
-									"imgsz": 448,
-									"device": 'cpu',
-									"cls_names": ['authentic', 'fake']})
+# SPOOFINGDET = SpoofDetectionRunnable(**{"model_path": f"{str(ROOT)}/weights/spoofing.pt",
+# 									"imgsz": 448,
+# 									"device": 'cpu',
+# 									"cls_names": ['authentic', 'fake']})
+SPOOFINGDET = FakeFace(f"{str(ROOT)}/weights/spoofing.onnx")
 
 TRITONSERVER_IP = os.getenv('TRITONSERVER_IP', "192.168.6.142")
 TRITONSERVER_PORT = os.getenv('TRITONSERVER_PORT', 8001)
@@ -184,7 +186,7 @@ async def searchUser(image: UploadFile = File(...)):
 	if len(croped_image)==0:
 		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
 	#---------------spoofing--------------
-	result = spoofingdet.inference([img])[0]
+	result = SPOOFINGDET.inference([img])[0]
 	print("---------result_spoofing", result)
 	if result[1] > 0.85:
 		img_list = os.listdir("./image_test")
@@ -225,7 +227,7 @@ async def searchUser(image: UploadFile = File(...)):
 	similarity_sort_idx = np.lexsort((rand,similarity))[::-1]
 	similarity_sort_idx_best = similarity_sort_idx[0]
 	similarity_best = similarity[similarity_sort_idx_best]
-	print(similarity_best)
+	print("---------similarity_best: ", similarity_best)
 
 	infor_face = None
 	if similarity_best > 0.70:
@@ -252,7 +254,7 @@ async def spoofingCheck(image: UploadFile = File(...)):
 		if len(croped_image)==0:
 			return {"success": False, "error_code": 8001, "error": "Don't find any face"}
 		#---------------spoofing--------------
-		result = spoofingdet.inference([img])[0]
+		result = SPOOFINGDET.inference([img])[0]
 		print("---------result_spoofing", result)
 		if result[1] > 0.85:
 			# img_list = os.listdir("./image_test")
@@ -429,7 +431,7 @@ async def searchUserv2(image: UploadFile = File(...)):
 	if len(croped_image)==0:
 		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
 	#---------------spoofing--------------
-	result = spoofingdet.inference([img])[0]
+	result = SPOOFINGDET.inference([img])[0]
 	print("---------result_spoofing", result)
 	if result[1] > 0.85:
 		img_list = os.listdir("./image_test")
@@ -470,10 +472,11 @@ async def searchUserv2(image: UploadFile = File(...)):
 	ft_faces_idx_sort = np.argsort(ft_faces_idx, axis=0)	# get index of sorted value
 	similarity = similarity[ft_faces_idx_sort]				# value with sorted key
 	similarity_average = np.bincount(idx.flatten(), weights = similarity.flatten())/np.bincount(idx.flatten())	# calculate average with the same unique index 
-	print(similarity_average)
+	# print(similarity_average)
 	rand = np.random.random(similarity_average.size)
 	idx_sorted = np.lexsort((rand,similarity_average))[::-1] #sort random index by similarity_average
 	similarity_best = similarity_average[idx_sorted[0]]
+	print("---------similarity_best: ", similarity_best)
 
 	infor_face = None
 	if similarity_best > 0.70:

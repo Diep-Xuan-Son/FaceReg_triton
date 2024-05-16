@@ -10,3 +10,5 @@ pyyaml
 pillow
 
 redis
+onnx
+onnxruntime
