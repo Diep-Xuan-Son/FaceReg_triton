@@ -74,8 +74,13 @@ async def registerFace(params: Person = Body(...), images: List[UploadFile] = Fi
 		in_retinaface, out_retinaface = get_io_retinaface(imgs)
 		results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface, outputs=out_retinaface)
 		croped_image = results.as_numpy("croped_image")
+		num_object = results.as_numpy("num_obj").squeeze(1)
+		print("-----num_object: ", num_object)
+		many_face_index = (np.where(num_object>1)[0]+1).tolist()
 		if len(croped_image)==0:
 			return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+		if len(many_face_index)!=0:
+			return {"success": False, "error_code": 8007, "error": f"Too many faces in image number {str(many_face_index).strip('[]')}"}
 		# print(croped_image.shape)
 		# cv2.imwrite("sadas.jpg", croped_image[0])
 		#////////////////////////////////////////////////////////////
@@ -172,8 +177,10 @@ async def searchUser(image: UploadFile = File(...)):
 	t_det = time.time()
 	#---------------------------face det-------------------------
 	in_retinaface, out_retinaface = get_io_retinaface(img)
-	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface, outputs=out_retinaface)
+	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
 	croped_image = results.as_numpy("croped_image")
+	num_object = results.as_numpy("num_obj").squeeze(1)
+	print("-----num_object: ", num_object)
 	if len(croped_image)==0:
 		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
 	#---------------spoofing--------------
@@ -198,6 +205,8 @@ async def searchUser(image: UploadFile = File(...)):
 
 	t_db = time.time()
 	ft_faces = np.array(redisClient.hvals("FaceFeature1"))
+	# print(ft_faces)
+	# print(len(ft_faces))
 	feature_truth = np.frombuffer(ft_faces, dtype=np.float16).reshape(len(ft_faces), -1, 512)
 	print("------Duration db: ", time.time()-t_db)
 
@@ -254,6 +263,230 @@ async def spoofingCheck(image: UploadFile = File(...)):
 	except Exception as e:
 		return {"success": False, "error": str(e)}
 
+@app.post('/healthcheck')
+async def health_check():
+	return { 'success': True, 'message': "healthy" }
+
+@app.post("/api/registerFacev2")
+async def registerFacev2(params: Person = Body(...), images: List[UploadFile] = File(...)):
+	try:
+		code = params.code
+		print(code)
+		# if redisClient.hexists("FaceInfor2", code):
+		# 	return {"success": False, "error_code": 8004, "error": "This user has been registered!"}
+
+		path_avatar = f"{IMG_AVATAR}/{code}/face_0.jpg"
+		path_code = os.path.join(PATH_IMG_AVATAR, code)
+		# if os.path.exists(path_code):
+		# 	shutil.rmtree(path_code)
+		os.makedirs(path_code, exist_ok=True)
+
+		name = params.name
+		birthday = params.birthday
+		imgs = []
+		img_infor = []
+
+		for i, image in enumerate(images):
+			image_byte = await image.read()
+			nparr = np.fromstring(image_byte, np.uint8)
+			img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+			img_infor.append(img.shape[:2])
+			# cv2.imwrite(f'{path_code}/face_{i}.jpg', img)
+			img = cv2.resize(img, (640,640), interpolation=cv2.INTER_AREA)
+			imgs.append(img)
+		imgs = np.array(imgs)
+		img_infor = np.array(img_infor)
+		#---------------------------face det-------------------------
+		in_retinaface, out_retinaface = get_io_retinaface(imgs)
+		results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
+		croped_image = results.as_numpy("croped_image")
+		num_object = results.as_numpy("num_obj").squeeze(1)
+		print("-----num_object: ", num_object)
+		many_face_index = (np.where(num_object>1)[0]+1).tolist()
+		if len(croped_image)==0:
+			return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+		if len(many_face_index)!=0:
+			return {"success": False, "error_code": 8007, "error": f"Too many faces in image number {str(many_face_index).strip('[]')}"}
+		# print(croped_image.shape)
+		# cv2.imwrite("sadas.jpg", croped_image[0])
+		#////////////////////////////////////////////////////////////
+
+		#---------------------------face reg-------------------------
+		in_ghostface, out_ghostface = get_io_ghostface(croped_image)
+		results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+		feature = results.as_numpy("feature_norm")
+		feature = feature.astype(np.float16)
+		print(feature.shape)
+
+		# dt_person_information = {code: f"{code},./{name},./{birthday}"}
+		# dt_person_feature = {code: feature.tobytes()}
+		miss_det = (np.where(num_object<1)[0]).tolist()
+		[imgs.pop(idx) for idx in reversed(sorted(miss_det))]
+
+		id_faces = redisClient.hkeys("FaceListCode2")
+		print(len(id_faces))
+		if len(id_faces)!=0:
+			id_faces = int(id_faces[-1]) + 1
+		else:
+			id_faces = 0
+
+		redisClient.hset("FaceInfor2", code, f"{code}@@@{name}@@@{birthday}@@@{path_avatar}")
+		for i, ft in enumerate(feature):
+			num_face = len(os.listdir(path_code))
+			cv2.imwrite(f'{path_code}/face_{num_face}.jpg', imgs[i])
+			redisClient.hset("FaceFeature2", f"{id_faces+i}", ft.tobytes())
+			redisClient.hset("FaceListCode2", f"{id_faces+i}", f"{code}")
+
+		return {"success": True}
+	except Exception as e:
+		return {"success": False, "error_code": 8008, "error": str(e)}
+
+@app.post("/api/deleteAllUserv2")
+def deleteAllUserv2():
+	try:
+		redisClient.delete("FaceInfor2")
+		redisClient.delete("FaceFeature2")
+		redisClient.delete("FaceListCode2")
+		if os.path.exists(PATH_IMG_AVATAR):
+			shutil.rmtree(PATH_IMG_AVATAR)
+			os.mkdir(PATH_IMG_AVATAR)
+		return {"success": True}
+	except Exception as e:
+		return {"success": False, "error_code": 8008, "error": str(e)}
+
+@app.post("/api/deleteUserv2")
+def deleteUserv2(codes: List[str] = ["001099008839"]):
+	print(codes)
+	try:
+		codes_noregister = []
+		for code in codes:
+			if not redisClient.hexists("FaceInfor2", code):
+				codes_noregister.append(code)
+		if len(codes_noregister)>0:
+			return {"success": False, "error_code": 8006, "error": f"User {tuple(codes_noregister)} has not been registered!"}
+
+		id_faces = np.char.decode(redisClient.hkeys("FaceListCode2"), encoding="utf-8")
+		code_list = np.char.decode(redisClient.hvals("FaceListCode2"), encoding="utf-8")
+		# print(code_list)
+		# print(id_faces)
+		code_idx = np.where(codes[0] == code_list)
+		redisClient.hdel("FaceFeature2", *id_faces[code_idx[0].tolist()])
+		redisClient.hdel("FaceListCode2", *id_faces[code_idx[0].tolist()])
+		redisClient.hdel("FaceInfor2", *codes)
+
+		for code in codes:
+			path_code = os.path.join(PATH_IMG_AVATAR, code)
+			if os.path.exists(path_code):
+				shutil.rmtree(path_code)
+
+		return {"success": True}
+	except Exception as e:
+		return {"success": False, "error_code": 8008, "error": str(e)}
+
+@app.post("/api/getInformationUserv2")
+def getInformationUserv2(codes: List[str] = []):
+	try:
+		infor_persons = {}
+		print(codes)
+		if len(codes)==0:
+			key_infor_persons = redisClient.hkeys("FaceInfor2")
+			if len(key_infor_persons)==0:
+				return {"success": True, "information": infor_persons}
+			key_infor_persons = b'-;'.join(key_infor_persons).decode('utf-8').split("-;")
+			val_infor_persons = redisClient.hvals("FaceInfor2")
+			val_infor_persons = np.array(b'@@@'.join(val_infor_persons).decode('utf-8').split("@@@")).reshape(-1,4)	# shape (-1,3) for 3 field: code, name, birthday
+			infor_persons = dict(zip(key_infor_persons, val_infor_persons.tolist()))
+		else:
+			for code in codes:
+				print(redisClient.hexists("FaceInfor2", code))
+				if not redisClient.hexists("FaceInfor2", code):
+					infor_persons[code] = "No register"
+					continue
+				infor_person = redisClient.hget("FaceInfor2", code)
+				infor_person = infor_person.decode("utf-8").split("@@@")
+				infor_persons[code] = {"id": infor_person[0], \
+										"name": infor_person[1], \
+										"birthday": infor_person[2], \
+										"avatar": infor_person[3]
+										}
+		return {"success": True, "information": infor_persons}
+	except Exception as e:
+		return {"success": False, "error_code": 8008, "error": str(e)}
+
+@app.post("/api/searchUserv2")
+async def searchUserv2(image: UploadFile = File(...)):
+	id_faces = redisClient.hkeys("FaceInfor2")
+	if len(id_faces) == 0:
+		return {"success": False, "error_code": 8000, "error": "Don't have any registered user"}
+	image_byte = await image.read()
+	nparr = np.fromstring(image_byte, np.uint8)
+	img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+	t_det = time.time()
+	#---------------------------face det-------------------------
+	in_retinaface, out_retinaface = get_io_retinaface(img)
+	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
+	croped_image = results.as_numpy("croped_image")
+	if len(croped_image)==0:
+		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+	#---------------spoofing--------------
+	result = spoofingdet.inference([img])[0]
+	print("---------result_spoofing", result)
+	if result[1] > 0.85:
+		img_list = os.listdir("./image_test")
+		cv2.imwrite(f"./image_test/{len(img_list)}.jpg", img)
+		return {"success": False, "error_code": 8002, "error": "Fake face image"}
+	#//////////////////////////////////////
+	#////////////////////////////////////////////////////////////
+	print("------Duration det: ", time.time()-t_det)
+
+	t_reg = time.time()
+	#---------------------------face reg-------------------------
+	in_ghostface, out_ghostface = get_io_ghostface(croped_image)
+	results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+	feature = results.as_numpy("feature_norm")
+	feature = feature.astype(np.float16)
+	#////////////////////////////////////////////////////////////
+	print("------Duration reg: ", time.time()-t_reg)
+
+	t_db = time.time()
+	ft_faces = np.array(redisClient.hvals("FaceFeature2"))
+	# print(ft_faces)
+	# print(len(ft_faces))
+	feature_truth = np.frombuffer(ft_faces, dtype=np.float16).reshape(len(ft_faces), 512)
+	print("------Duration db: ", time.time()-t_db)
+
+	t_comp = time.time()
+	#---------------------------compare face----------------------
+	print(feature_truth.shape)
+	print(feature.shape)
+	dist = np.linalg.norm(feature - feature_truth, axis=1)
+	similarity = (np.tanh((1.23132175 - dist) * 6.602259425) + 1) / 2
+	# print(similarity)
+
+	ft_faces_idx = np.char.decode(redisClient.hkeys("FaceFeature2"), encoding="utf-8").astype(int)
+	code_list = np.char.decode(redisClient.hvals("FaceListCode2"), encoding="utf-8")
+
+	codes, idx = np.unique(code_list, return_inverse=True)	# get unique code with corresponding index 
+	ft_faces_idx_sort = np.argsort(ft_faces_idx, axis=0)	# get index of sorted value
+	similarity = similarity[ft_faces_idx_sort]				# value with sorted key
+	similarity_average = np.bincount(idx.flatten(), weights = similarity.flatten())/np.bincount(idx.flatten())	# calculate average with the same unique index 
+	print(similarity_average)
+	rand = np.random.random(similarity_average.size)
+	idx_sorted = np.lexsort((rand,similarity_average))[::-1] #sort random index by similarity_average
+	similarity_best = similarity_average[idx_sorted[0]]
+
+	infor_face = None
+	if similarity_best > 0.70:
+		code = codes[idx_sorted[0]]
+		infor_face = redisClient.hget("FaceInfor2", code)
+	#/////////////////////////////////////////////////////////////
+	print("------Duration db: ", time.time()-t_comp)
+	if infor_face is None:
+		return {"success": False, "error_code": 8003, "error": "Don't find any user"}
+	print(infor_face)
+	infor_face = infor_face.decode("utf-8").split("@@@")
+	return {"success": True, "information": {"code": infor_face[0], "name": infor_face[1], "birthday": infor_face[2], "avatar": infor_face[3], "similarity": float(similarity_best)}}
+
 if __name__=="__main__":
 	host = "0.0.0.0"
 	port = 8421
@@ -269,5 +502,6 @@ if __name__=="__main__":
 8004: "This user has been registered!"
 8005: "No users have been registered!"
 8006: "This user has not been registered!"
+8007: "Too many faces in this image"
 8008: error system
 """

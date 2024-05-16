@@ -49,6 +49,11 @@ output [
     name: "preprocessed_image_info"
     data_type: TYPE_INT16
     dims: [ -1 ]
+  },
+  {
+    name: "num_obj"
+    data_type: TYPE_INT16
+    dims: [ 1 ]
   }
 ]
 
@@ -120,6 +125,10 @@ ensemble_scheduling {
       output_map {
         key: "detection_retinaface_postprocessing_classes"
         value: "confs"
+      }
+      output_map {
+        key: "detection_retinaface_postprocessing_numobject"
+        value: "num_obj"
       }
     }
   ]

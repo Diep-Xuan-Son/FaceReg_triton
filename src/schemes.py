@@ -17,3 +17,12 @@ class Person(BaseModel):
 		if isinstance(value, str):
 			return cls(**json.loads(value))
 		return value
+
+	# @classmethod
+    # def as_form(
+    #     cls,
+    #     code: str = Query("001099008839", description="ID of person, ID is unique"),
+    #     name: str = Query("Son", description="Name of person"),
+    #     birthday: str = Query("29/04/1999", description="Birthday of person")
+    # ):
+    #     return cls(code=code, name=name, birthday=birthday)

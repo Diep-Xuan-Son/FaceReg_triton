@@ -12,11 +12,12 @@ RUN apt-get update && \
 			ffmpeg \
 			nano
 
+RUN python3 -m pip install --upgrade pip
+
 WORKDIR /controller_server
 COPY requirements.txt /controller_server/requirements.txt
 COPY requirements_serving.txt /controller_server/requirements_serving.txt
 
-RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip --no-cache-dir install -r /controller_server/requirements_serving.txt
 RUN python3 -m pip --no-cache-dir install -r /controller_server/requirements.txt
 

@@ -65,6 +65,11 @@ output [
     name: "detection_retinaface_postprocessing_classes"
     data_type: TYPE_FP32
     dims: [ 1 ]
+  },
+  {
+    name: "detection_retinaface_postprocessing_numobject"
+    data_type: TYPE_INT16
+    dims: [ 1 ]
   }
 ]
 

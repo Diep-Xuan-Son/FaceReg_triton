@@ -98,6 +98,9 @@ class TritonPythonModel:
 		classes_config = pb_utils.get_output_config_by_name(
 			model_config, "detection_retinaface_postprocessing_classes"
 		)
+		numobject_config = pb_utils.get_output_config_by_name(
+			model_config, "detection_retinaface_postprocessing_numobject"
+		)
 		croped_image_config = pb_utils.get_output_config_by_name(
 			model_config, "croped_image"
 		)
@@ -109,6 +112,9 @@ class TritonPythonModel:
 		# Convert Triton types to numpy types
 		self.croped_image_dtype = pb_utils.triton_string_to_numpy(
 			croped_image_config["data_type"]
+		)
+		self.numobject_dtype = pb_utils.triton_string_to_numpy(
+			numobject_config["data_type"]
 		)
 		self.min_sizes = [[16,32], [64,128], [256,512]]
 		self.steps = [8, 16, 32]
@@ -227,6 +233,7 @@ class TritonPythonModel:
 
 		classes_dtype = self.classes_dtype
 		croped_image_dtype = self.croped_image_dtype
+		numobject_dtype = self.numobject_dtype
 
 		responses = []
 
@@ -255,6 +262,7 @@ class TritonPythonModel:
 			# out_landmarks = np.empty((0,11), float)
 			croped_images = []
 			out_classes = []
+			num_objects = []
 			for i, img in enumerate(in_img.as_numpy()):
 				img_info = in_info.as_numpy()[i]
 				loc = in_det.as_numpy()[i]
@@ -267,6 +275,8 @@ class TritonPythonModel:
 				classes = dets[:,4]
 				landms = dets[:,5:]
 
+				num_objects.append([len(bboxes)])
+
 				#img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 				biggestBox = None
 				maxArea = 0
@@ -278,8 +288,9 @@ class TritonPythonModel:
 						maxArea = area
 						biggestBox = bbox
 						landmarks = landms[j]
-						out_classes.extend(np.expand_dims(classes, axis=0))
+						
 				if biggestBox is not None:
+					out_classes.extend(np.expand_dims(classes, axis=0))
 					bbox = np.array(biggestBox)
 					landmarks = np.array([landmarks[0], landmarks[2], landmarks[4], landmarks[6], landmarks[8],
 								landmarks[1], landmarks[3], landmarks[5], landmarks[7], landmarks[9]])
@@ -288,6 +299,9 @@ class TritonPythonModel:
 					croped_images.extend(np.expand_dims(nimg, axis=0))
 			out_classes = np.array(out_classes)
 			croped_images = np.array(croped_images)
+			num_objects = np.array(num_objects)
+			# print(num_objects)
+			# print(numobject_dtype)
 			# 	img_id = np.broadcast_to(i, (len(dets),1))
 			# 	out_dets = np.vstack( (out_dets, np.append(dets[:,:4], img_id, axis=1)) )	# out[n,4] -> out[n,5] -> out[n,n,5] with out[:,:,-1] is "id" of image
 			# 	out_classes = np.vstack( (out_classes, np.append(dets[:,4][:,None], img_id, axis=1)) )
@@ -313,6 +327,9 @@ class TritonPythonModel:
 			out_tensor_croped_image = pb_utils.Tensor(
 				"croped_image", croped_images.astype(croped_image_dtype)
 			)
+			out_tensor_numobject = pb_utils.Tensor(
+				"detection_retinaface_postprocessing_numobject", num_objects.astype(numobject_dtype)
+			)
 
 			# Create InferenceResponse. You can set an error here in case
 			# there was a problem with handling this inference request.
@@ -322,7 +339,7 @@ class TritonPythonModel:
 			# pb_utils.InferenceResponse(
 			#    output_tensors=..., TritonError("An error occurred"))
 			inference_response = pb_utils.InferenceResponse(
-				output_tensors=[out_tensor_croped_image, out_tensor_classes]
+				output_tensors=[out_tensor_croped_image, out_tensor_classes, out_tensor_numobject]
 			)
 			responses.append(inference_response)
 		# You should return a list of pb_utils.InferenceResponse. Length
