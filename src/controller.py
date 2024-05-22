@@ -74,7 +74,7 @@ async def registerFace(params: Person = Body(...), images: List[UploadFile] = Fi
 		img_infor = np.array(img_infor)
 		#---------------------------face det-------------------------
 		in_retinaface, out_retinaface = get_io_retinaface(imgs)
-		results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface, outputs=out_retinaface)
+		results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
 		croped_image = results.as_numpy("croped_image")
 		num_object = results.as_numpy("num_obj").squeeze(1)
 		print("-----num_object: ", num_object)
@@ -188,7 +188,7 @@ async def searchUser(image: UploadFile = File(...)):
 	#---------------spoofing--------------
 	result = SPOOFINGDET.inference([img])[0]
 	print("---------result_spoofing", result)
-	if result[1] > 0.85:
+	if result[1] > 0.78:
 		img_list = os.listdir("./image_test")
 		cv2.imwrite(f"./image_test/{len(img_list)}.jpg", img)
 		return {"success": False, "error_code": 8002, "error": "Fake face image"}
@@ -433,7 +433,7 @@ async def searchUserv2(image: UploadFile = File(...)):
 	#---------------spoofing--------------
 	result = SPOOFINGDET.inference([img])[0]
 	print("---------result_spoofing", result)
-	if result[1] > 0.85:
+	if result[1] > 0.78:
 		img_list = os.listdir("./image_test")
 		cv2.imwrite(f"./image_test/{len(img_list)}.jpg", img)
 		return {"success": False, "error_code": 8002, "error": "Fake face image"}
@@ -479,7 +479,7 @@ async def searchUserv2(image: UploadFile = File(...)):
 	print("---------similarity_best: ", similarity_best)
 
 	infor_face = None
-	if similarity_best > 0.70:
+	if similarity_best > 0.68:
 		code = codes[idx_sorted[0]]
 		infor_face = redisClient.hget("FaceInfor2", code)
 	#/////////////////////////////////////////////////////////////

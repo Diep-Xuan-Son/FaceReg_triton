@@ -15,17 +15,17 @@ services:
     profiles:
       - dev1
     command: redis-server /usr/local/etc/redis/redis.conf
-  redis2:
-    image: redis
-    container_name: face-redis2
-    ports: 
-      - "6401:6401"
-    volumes:
-      - ./data:/data
-      - ./config/redis2.conf:/usr/local/etc/redis/redis.conf
-    profiles:
-      - dev2
-    command: redis-server /usr/local/etc/redis/redis.conf
+  # redis2:
+  #   image: redis
+  #   container_name: face-redis2
+  #   ports: 
+  #     - "6401:6401"
+  #   volumes:
+  #     - ./data:/data
+  #     - ./config/redis2.conf:/usr/local/etc/redis/redis.conf
+  #   profiles:
+  #     - dev2
+  #   command: redis-server /usr/local/etc/redis/redis.conf
 
   triton_server:
     image: mq/tritonserver
@@ -33,6 +33,8 @@ services:
     restart: always
     build:
       dockerfile: Dockerfile_triton
+      shm_size: '4gb'
+    shm_size: "4gb"
     ports: 
       - "8000:8000"
       - "8001:8001"
