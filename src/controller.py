@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from schemes import *
 from triton_services import *
+from libs.utils import *
 
 from service_ai.spoof_detection import SpoofDetectionRunnable
 from service_ai.spoof_detection_onnx import FakeFace
@@ -24,6 +25,8 @@ FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]
 IMG_AVATAR = "static/avatar"
 PATH_IMG_AVATAR = f"{str(ROOT)}/{IMG_AVATAR}"
+PATH_IMG_FAIL = f"{str(ROOT)}/static/failface"
+check_folder_exist(path_avatar=PATH_IMG_AVATAR, path_imgfail=PATH_IMG_FAIL)
 
 # SPOOFINGDET = SpoofDetectionRunnable(**{"model_path": f"{str(ROOT)}/weights/spoofing.pt",
 # 									"imgsz": 448,
@@ -450,10 +453,34 @@ async def searchUserv2(image: UploadFile = File(...)):
 	#////////////////////////////////////////////////////////////
 	print("------Duration reg: ", time.time()-t_reg)
 
+	# #---------------------------compare fail face---------------------
+	# ft_faces = np.array(redisClient.hvals("FaceFeatureFail2"))
+	# if len(ft_faces)==0:
+	# 	codes_fail = []
+	# else:
+		# feature_truth = np.frombuffer(ft_faces, dtype=np.float16).reshape(len(ft_faces), 512)
+		# # print(feature_truth.shape)
+		# # print(feature.shape)
+		# dist = np.linalg.norm(feature - feature_truth, axis=1)
+		# similarity = (np.tanh((1.23132175 - dist) * 6.602259425) + 1) / 2
+
+		# ft_faces_idx = np.char.decode(redisClient.hkeys("FaceFeatureFail2"), encoding="utf-8").astype(int)
+		# code_list = np.char.decode(redisClient.hvals("FaceListCodeFail2"), encoding="utf-8")
+
+		# codes, idx = np.unique(code_list, return_inverse=True)	# get unique code with corresponding index 
+		# ft_faces_idx_sort = np.argsort(ft_faces_idx, axis=0)	# get index of sorted value
+		# similarity = similarity[ft_faces_idx_sort]				# value with sorted key
+		# similarity_average = np.bincount(idx.flatten(), weights = similarity.flatten())/np.bincount(idx.flatten())	# calculate average with the same unique index 
+		# # print(similarity_average)
+		# rand = np.random.random(similarity_average.size)
+		# idx_sorted = np.lexsort((rand,similarity_average))[::-1] #sort random index by similarity_average
+		# print(idx_sorted)
+		# similaritys = similarity_average[idx_sorted]
+		# codes_fail = codes[idx_sorted][similaritys>0.8]
+	# #/////////////////////////////////////////////////////////////////
+
 	t_db = time.time()
 	ft_faces = np.array(redisClient.hvals("FaceFeature2"))
-	# print(ft_faces)
-	# print(len(ft_faces))
 	feature_truth = np.frombuffer(ft_faces, dtype=np.float16).reshape(len(ft_faces), 512)
 	print("------Duration db: ", time.time()-t_db)
 
@@ -479,9 +506,17 @@ async def searchUserv2(image: UploadFile = File(...)):
 	print("---------similarity_best: ", similarity_best)
 
 	infor_face = None
-	if similarity_best > 0.68:
+	if similarity_best > 0.75:
 		code = codes[idx_sorted[0]]
 		infor_face = redisClient.hget("FaceInfor2", code)
+
+	# infor_face = None
+	# similaritys = similarity_average[idx_sorted]
+	# codes = codes[idx_sorted][similaritys>0.75]
+	# for i, code in enumerate(codes):
+	# 	if code not in codes_fail:
+	# 		similarity_best = similarity_average[idx_sorted[i]]
+	# 		infor_face = redisClient.hget("FaceInfor2", code)
 	#/////////////////////////////////////////////////////////////
 	print("------Duration db: ", time.time()-t_comp)
 	if infor_face is None:
@@ -489,6 +524,119 @@ async def searchUserv2(image: UploadFile = File(...)):
 	print(infor_face)
 	infor_face = infor_face.decode("utf-8").split("@@@")
 	return {"success": True, "information": {"code": infor_face[0], "name": infor_face[1], "birthday": infor_face[2], "avatar": infor_face[3], "similarity": float(similarity_best)}}
+
+@app.post("/api/checkFailFacev2")
+async def checkFailFacev2(params: Person = Body(...), images: List[UploadFile] = File(...)):
+	# try:
+	code = params.code
+	print(code)
+
+	name = params.name
+	birthday = params.birthday
+	imgs = []
+
+	num_img = len(os.listdir(PATH_IMG_FAIL))
+	for i, image in enumerate(images):
+		image_byte = await image.read()
+		nparr = np.fromstring(image_byte, np.uint8)
+		img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+		cv2.imwrite(f'{PATH_IMG_FAIL}/{code}_{name}_{num_img+i}.jpg', img)
+		img = cv2.resize(img, (640,640), interpolation=cv2.INTER_AREA)
+		imgs.append(img)
+	imgs = np.array(imgs)
+	#---------------------------face det-------------------------
+	in_retinaface, out_retinaface = get_io_retinaface(imgs)
+	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
+	croped_image = results.as_numpy("croped_image")
+	num_object = results.as_numpy("num_obj").squeeze(1)
+
+	if len(croped_image)==0:
+		return {"success": True}
+	#////////////////////////////////////////////////////////////
+
+	#---------------------------face reg-------------------------
+	in_ghostface, out_ghostface = get_io_ghostface(croped_image)
+	results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+	feature = results.as_numpy("feature_norm")
+	feature = feature.astype(np.float16)
+	print(feature.shape)
+
+	miss_det = (np.where(num_object<1)[0]).tolist()
+	[imgs.pop(idx) for idx in reversed(sorted(miss_det))]
+
+	id_faces = redisClient.hkeys("FaceListCodeFail2")
+	print(len(id_faces))
+	if len(id_faces)!=0:
+		id_faces = int(id_faces[-1]) + 1
+	else:
+		id_faces = 0
+
+	for i, ft in enumerate(feature):
+		redisClient.hset("FaceFeatureFail2", f"{id_faces+i}", ft.tobytes())
+		redisClient.hset("FaceListCodeFail2", f"{id_faces+i}", f"{code}")
+
+	return {"success": True}
+	# except Exception as e:
+	# 	return {"success": False, "error_code": 8008, "error": str(e)}
+
+# @app.post("/api/getFailFacev2")
+# async def getFailFacev2(image: UploadFile = File(...)):
+# 	image_byte = await image.read()
+# 	nparr = np.fromstring(image_byte, np.uint8)
+# 	img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+# 	#---------------------------face det-------------------------
+# 	in_retinaface, out_retinaface = get_io_retinaface(img)
+# 	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
+# 	croped_image = results.as_numpy("croped_image")
+# 	if len(croped_image)==0:
+# 		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+
+# 	#---------------------------face reg-------------------------
+# 	in_ghostface, out_ghostface = get_io_ghostface(croped_image)
+# 	results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+# 	feature = results.as_numpy("feature_norm")
+# 	feature = feature.astype(np.float16)
+# 	#////////////////////////////////////////////////////////////
+
+# 	ft_faces = np.array(redisClient.hvals("FaceFeatureFail2"))
+# 	feature_truth = np.frombuffer(ft_faces, dtype=np.float16).reshape(len(ft_faces), 512)
+
+# 	print(feature_truth.shape)
+# 	print(feature.shape)
+# 	dist = np.linalg.norm(feature - feature_truth, axis=1)
+# 	similarity = (np.tanh((1.23132175 - dist) * 6.602259425) + 1) / 2
+
+# 	ft_faces_idx = np.char.decode(redisClient.hkeys("FaceFeatureFail2"), encoding="utf-8").astype(int)
+# 	code_list = np.char.decode(redisClient.hvals("FaceListCodeFail2"), encoding="utf-8")
+
+# 	codes, idx = np.unique(code_list, return_inverse=True)	# get unique code with corresponding index 
+# 	ft_faces_idx_sort = np.argsort(ft_faces_idx, axis=0)	# get index of sorted value
+# 	similarity = similarity[ft_faces_idx_sort]				# value with sorted key
+# 	similarity_average = np.bincount(idx.flatten(), weights = similarity.flatten())/np.bincount(idx.flatten())	# calculate average with the same unique index 
+# 	# print(similarity_average)
+# 	rand = np.random.random(similarity_average.size)
+# 	idx_sorted = np.lexsort((rand,similarity_average))[::-1] #sort random index by similarity_average
+# 	print(idx_sorted)
+# 	similaritys = similarity_average[idx_sorted]
+# 	codes = codes[idx_sorted][similaritys>0.8]
+
+# 	print("-----idx_sorted: ", idx_sorted)
+# 	print(similaritys)
+# 	print(codes)
+# 	print("001099008838" in codes)
+
+
+@app.post("/api/deleteFailFacev2")
+async def deleteFailFacev2():
+	try:
+		redisClient.delete("FaceFeatureFail2")
+		redisClient.delete("FaceListCodeFail2")
+		if os.path.exists(PATH_IMG_FAIL):
+			shutil.rmtree(PATH_IMG_FAIL)
+			os.mkdir(PATH_IMG_FAIL)
+		return {"success": True}
+	except Exception as e:
+		return {"success": False, "error_code": 8008, "error": str(e)}
 
 if __name__=="__main__":
 	host = "0.0.0.0"
