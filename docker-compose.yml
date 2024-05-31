@@ -63,6 +63,9 @@ services:
       dockerfile: Dockerfile_controller
     ports: 
       - "8421:8421"
+    depends_on:
+      - redis1
+      - triton_server
     # volumes:
     #   - .:/workspace/
     networks:

@@ -44,6 +44,7 @@ def get_io_ghostface(imgs):
 
 	return inputs, outputs
 
+
 def get_io_compareface(ft1, ft2):
 	# Infer
 	inputs = []
