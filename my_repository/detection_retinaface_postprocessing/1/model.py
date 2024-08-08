@@ -104,6 +104,9 @@ class TritonPythonModel:
 		croped_image_config = pb_utils.get_output_config_by_name(
 			model_config, "croped_image"
 		)
+		box_config = pb_utils.get_output_config_by_name(
+			model_config, "detection_retinaface_postprocessing_box"
+		)
 
 		# Convert Triton types to numpy types
 		self.classes_dtype = pb_utils.triton_string_to_numpy(
@@ -115,6 +118,9 @@ class TritonPythonModel:
 		)
 		self.numobject_dtype = pb_utils.triton_string_to_numpy(
 			numobject_config["data_type"]
+		)
+		self.box_dtype = pb_utils.triton_string_to_numpy(
+			box_config["data_type"]
 		)
 		self.min_sizes = [[16,32], [64,128], [256,512]]
 		self.steps = [8, 16, 32]
@@ -234,6 +240,7 @@ class TritonPythonModel:
 		classes_dtype = self.classes_dtype
 		croped_image_dtype = self.croped_image_dtype
 		numobject_dtype = self.numobject_dtype
+		box_dtype = self.box_dtype
 
 		responses = []
 
@@ -263,6 +270,7 @@ class TritonPythonModel:
 			croped_images = []
 			out_classes = []
 			num_objects = []
+			boxs = []
 			for i, img in enumerate(in_img.as_numpy()):
 				img_info = in_info.as_numpy()[i]
 				loc = in_det.as_numpy()[i]
@@ -292,6 +300,7 @@ class TritonPythonModel:
 				if biggestBox is not None:
 					out_classes.extend(np.expand_dims(classes, axis=0))
 					bbox = np.array(biggestBox)
+					boxs.append(bbox)
 					landmarks = np.array([landmarks[0], landmarks[2], landmarks[4], landmarks[6], landmarks[8],
 								landmarks[1], landmarks[3], landmarks[5], landmarks[7], landmarks[9]])
 					landmarks = landmarks.reshape((2,5)).T
@@ -300,6 +309,7 @@ class TritonPythonModel:
 			out_classes = np.array(out_classes)
 			croped_images = np.array(croped_images)
 			num_objects = np.array(num_objects)
+			boxs = np.array(boxs)
 			# print(num_objects)
 			# print(numobject_dtype)
 			# 	img_id = np.broadcast_to(i, (len(dets),1))
@@ -330,6 +340,9 @@ class TritonPythonModel:
 			out_tensor_numobject = pb_utils.Tensor(
 				"detection_retinaface_postprocessing_numobject", num_objects.astype(numobject_dtype)
 			)
+			out_tensor_box = pb_utils.Tensor(
+				"detection_retinaface_postprocessing_box", boxs.astype(box_dtype)
+			)
 
 			# Create InferenceResponse. You can set an error here in case
 			# there was a problem with handling this inference request.
@@ -339,7 +352,7 @@ class TritonPythonModel:
 			# pb_utils.InferenceResponse(
 			#    output_tensors=..., TritonError("An error occurred"))
 			inference_response = pb_utils.InferenceResponse(
-				output_tensors=[out_tensor_croped_image, out_tensor_classes, out_tensor_numobject]
+				output_tensors=[out_tensor_croped_image, out_tensor_classes, out_tensor_numobject, out_tensor_box]
 			)
 			responses.append(inference_response)
 		# You should return a list of pb_utils.InferenceResponse. Length

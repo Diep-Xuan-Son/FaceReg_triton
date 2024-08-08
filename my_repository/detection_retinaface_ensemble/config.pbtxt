@@ -54,6 +54,11 @@ output [
     name: "num_obj"
     data_type: TYPE_INT16
     dims: [ 1 ]
+  },
+  {
+    name: "box"
+    data_type: TYPE_FP32
+    dims: [ 4 ]
   }
 ]
 
@@ -129,6 +134,10 @@ ensemble_scheduling {
       output_map {
         key: "detection_retinaface_postprocessing_numobject"
         value: "num_obj"
+      }
+      output_map {
+        key: "detection_retinaface_postprocessing_box"
+        value: "box"
       }
     }
   ]

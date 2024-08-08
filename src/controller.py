@@ -38,6 +38,10 @@ TRITONSERVER_IP = os.getenv('TRITONSERVER_IP', "192.168.6.142")
 TRITONSERVER_PORT = os.getenv('TRITONSERVER_PORT', 8001)
 REDISSERVER_IP = os.getenv('REDISSERVER_IP', "192.168.6.142")
 REDISSERVER_PORT = os.getenv('REDISSERVER_PORT', 6400)
+print("----TRITONSERVER_IP: ", TRITONSERVER_IP)
+print("----TRITONSERVER_PORT: ", TRITONSERVER_PORT)
+print("----REDISSERVER_IP: ", REDISSERVER_IP)
+print("----REDISSERVER_PORT: ", REDISSERVER_PORT)
 tritonClient = get_triton_client(ip_address=f"{TRITONSERVER_IP}:{TRITONSERVER_PORT}")
 redisClient = redis.StrictRedis(host=REDISSERVER_IP,
 								port=int(REDISSERVER_PORT),
@@ -47,7 +51,7 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.post("/api/registerFace")
-async def registerFace(params: Person = Body(...), images: List[UploadFile] = File(...)):
+async def registerFace(params: Person = Depends(Person.as_form), images: List[UploadFile] = File(...)):
 	try:
 		code = params.code
 		print(code)
@@ -187,7 +191,7 @@ async def searchUser(image: UploadFile = File(...)):
 	img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 	#----------------
 	# img_list = os.listdir("./image_error")
-	# cv2.imwrite(f"./image_error/{len(img_list)}.jpg", img)
+	# cv2.imwrite(f"aaa.jpg", img)
 	#------------------
 	t_det = time.time()
 	#---------------------------face det-------------------------
@@ -198,12 +202,22 @@ async def searchUser(image: UploadFile = File(...)):
 	print("-----num_object: ", num_object)
 	if len(croped_image)==0:
 		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+		
+	box = results.as_numpy("box")[0]
+	# print((box[2]-box[0])*(box[3]-box[1]))
+	area_img = img.shape[0]*img.shape[1]
+	w_crop = (box[2]-box[0])
+	h_crop = (box[3]-box[1])
+	if not area_img*0.1<w_crop*h_crop<area_img*0.3:
+		return {"success": False, "error_code": 8001, "error": "Face size is not true"}
 	#---------------spoofing--------------
-	result = SPOOFINGDET.inference([img])[0]
+	box_expand = np.array([max(box[0]-w_crop,0), max(box[1]-h_crop,0), min(box[2]+w_crop, img.shape[1]), min(box[3]+h_crop, img.shape[0])], dtype=int)
+	result = SPOOFINGDET.inference([img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]]])[0]
 	print("---------result_spoofing", result)
+	# cv2.imwrite(f"aaa.jpg", img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]])
 	if result[1] > 0.78:
 		img_list = os.listdir("./image_spoofing")
-		cv2.imwrite(f"./image_spoofing/{len(img_list)}.jpg", img)
+		cv2.imwrite(f"./image_spoofing/{len(img_list)}.jpg", img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]])
 		return {"success": False, "error_code": 8002, "error": "Fake face image"}
 	#//////////////////////////////////////
 	#////////////////////////////////////////////////////////////
@@ -328,7 +342,7 @@ async def health_check():
 	return { 'success': True, 'message': "healthy" }
 
 @app.post("/api/registerFacev2")
-async def registerFacev2(params: Person = Body(...), images: List[UploadFile] = File(...)):
+async def registerFacev2(params: Person = Depends(Person.as_form), images: List[UploadFile] = File(...)):
 	try:
 		code = params.code
 		print(code)
@@ -488,12 +502,22 @@ async def searchUserv2(image: UploadFile = File(...)):
 	croped_image = results.as_numpy("croped_image")
 	if len(croped_image)==0:
 		return {"success": False, "error_code": 8001, "error": "Don't find any face"}
+
+	box = results.as_numpy("box")[0]
+	# print((box[2]-box[0])*(box[3]-box[1]))
+	area_img = img.shape[0]*img.shape[1]
+	w_crop = (box[2]-box[0])
+	h_crop = (box[3]-box[1])
+	if not area_img*0.15<w_crop*h_crop<area_img*0.3:
+		return {"success": False, "error_code": 8009, "error": "Face size is not true"}
 	#---------------spoofing--------------
-	result = SPOOFINGDET.inference([img])[0]
+	box_expand = np.array([box[0]-w_crop/2, box[1]-h_crop/2, box[2]+w_crop/2, box[3]+h_crop/2], dtype=int)
+	result = SPOOFINGDET.inference([img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]]])[0]
+	# result = SPOOFINGDET.inference([img])[0]
 	print("---------result_spoofing", result)
 	if result[1] > 0.78:
 		img_list = os.listdir("./image_spoofing")
-		cv2.imwrite(f"./image_spoofing/{len(img_list)}.jpg", img)
+		cv2.imwrite(f"./image_spoofing/{len(img_list)}.jpg", img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]])
 		return {"success": False, "error_code": 8002, "error": "Fake face image"}
 	#//////////////////////////////////////
 	#////////////////////////////////////////////////////////////
@@ -582,7 +606,7 @@ async def searchUserv2(image: UploadFile = File(...)):
 	return {"success": True, "information": {"code": infor_face[0], "name": infor_face[1], "birthday": infor_face[2], "avatar": infor_face[3], "similarity": float(similarity_best)}}
 
 @app.post("/api/checkFailFacev2")
-async def checkFailFacev2(params: Person = Body(...), images: List[UploadFile] = File(...)):
+async def checkFailFacev2(params: Person = Depends(Person.as_form), images: List[UploadFile] = File(...)):
 	# try:
 	code = params.code
 	print(code)
@@ -711,4 +735,10 @@ if __name__=="__main__":
 8006: "This user has not been registered!"
 8007: "Too many faces in this image"
 8008: error system
+8009: "Face size is not true"
 """
+
+
+# docker run -it --shm-size=4g --rm -p8000:8000 -p8001:8001 -p8002:8002 -e PYTHONIOENCODING=UTF-8 -v ${PWD}:/workspace/ -v ${PWD}/my_repository:/models -v ${PWD}/requirements.txt:/opt/tritonserver/requirements.tx tritonserver_mq
+
+# tritonserver --model-repository=/models --model-control-mode=poll --repository-poll-secs=5

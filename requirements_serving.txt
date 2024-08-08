@@ -3,4 +3,4 @@ fastapi
 python-multipart
 #tritonclient[all]
 
-grpcio==1.42.0
+grpcio==1.64.1
