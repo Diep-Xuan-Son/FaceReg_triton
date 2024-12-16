@@ -40,6 +40,7 @@ from face_preprocess import preprocess as face_preprocess
 # and converting Triton input/output types to numpy types.
 import triton_python_backend_utils as pb_utils
 from PIL import Image
+import time
 
 class PriorBox(object):
 	def __init__(self, min_sizes=[[16,32],[64,128],[256,512]], steps=[8,16,32], clip=False, image_size=None, phase='train'):
@@ -65,9 +66,11 @@ class PriorBox(object):
 						anchors += [cx, cy, s_kx, s_ky]
 
 		# back to torch land
-		output = torch.Tensor(anchors).view(-1, 4)
+		# output = torch.Tensor(anchors).view(-1, 4)
+		output = np.array(anchors).reshape(-1, 4)
 		if self.clip:
-			output.clamp_(max=1, min=0)
+			# output.clamp_(max=1, min=0)
+			output = np.clip(output, a_max=1, a_min=0)
 		return output
 
 class TritonPythonModel:
@@ -167,6 +170,12 @@ class TritonPythonModel:
 		boxes[:, :2] -= boxes[:, 2:] / 2
 		boxes[:, 2:] += boxes[:, :2]
 		return boxes
+	def decode_cpu(self, loc, priors, variances):
+		boxes = np.concatenate((priors[:, :2] + loc[:, :2] * variances[0] * priors[:, 2:],
+							priors[:, 2:] * np.exp(loc[:, 2:] * variances[1])), 1)
+		boxes[:, :2] -= boxes[:, 2:] / 2
+		boxes[:, 2:] += boxes[:, :2]
+		return boxes
 
 	def decode_landm(self, pre, priors, variances):
 		landms = torch.cat((priors[:, :2] + pre[:, :2] * variances[0] * priors[:, 2:],
@@ -176,26 +185,35 @@ class TritonPythonModel:
 							priors[:, :2] + pre[:, 8:10] * variances[0] * priors[:, 2:],
 							), dim=1)
 		return landms
+	def decode_landm_cpu(self, pre, priors, variances):
+		landms = np.concatenate((priors[:, :2] + pre[:, :2] * variances[0] * priors[:, 2:],
+							priors[:, :2] + pre[:, 2:4] * variances[0] * priors[:, 2:],
+							priors[:, :2] + pre[:, 4:6] * variances[0] * priors[:, 2:],
+							priors[:, :2] + pre[:, 6:8] * variances[0] * priors[:, 2:],
+							priors[:, :2] + pre[:, 8:10] * variances[0] * priors[:, 2:],
+							), axis=1)
+		return landms
 
 	def postProcess(self, img_info, loc, conf, landms):
-			loc = torch.Tensor(loc)
-			conf = torch.Tensor(conf)
-			landms = torch.Tensor(landms)
+			loc = loc
+			conf = conf
+			landms = landms
 			im_height, im_width = img_info
 			scale = np.array([im_width, im_height, im_width, im_height])
-			priorbox = PriorBox(min_sizes=self.min_sizes, steps=self.steps, \
-							clip=self.clip, image_size=(self.imagesz, self.imagesz))
-			priors = priorbox.forward()
-			prior_data = priors.data
-			boxes = self.decode(loc.data, prior_data, self.variance)
+			#priorbox = PriorBox(min_sizes=self.min_sizes, steps=self.steps, \
+			#				clip=self.clip, image_size=(self.imagesz, self.imagesz))
+			#priors = priorbox.forward()
+			prior_data = self.priors.copy()
+			prior_data = torch.from_numpy(prior_data)
+			boxes = self.decode_cpu(loc, prior_data.cpu().numpy(), self.variance)
 			boxes = boxes * scale
-			boxes = boxes.cpu().numpy()
-			scores = conf.data.cpu().numpy()[:, 1]
-			landms = self.decode_landm(landms.data, prior_data, self.variance)
-			scale_landms = torch.Tensor([im_width, im_height, im_width, im_height, im_width,
+			#boxes = boxes.cpu().numpy()
+			scores = conf[:, 1]
+			landms = self.decode_landm_cpu(landms, prior_data.cpu().numpy(), self.variance)
+			scale_landms = np.array([im_width, im_height, im_width, im_height, im_width,
 								   im_height, im_width, im_height, im_width, im_height])
 			landms = landms * scale_landms
-			landms = landms.cpu().numpy()
+			#landms = landms.cpu().numpy()
 
 			inds = np.where(scores > self.conf_thres)[0]
 			boxes = boxes[inds]
@@ -271,6 +289,7 @@ class TritonPythonModel:
 			out_classes = []
 			num_objects = []
 			boxs = []
+			st_time = time.time()
 			for i, img in enumerate(in_img.as_numpy()):
 				img_info = in_info.as_numpy()[i]
 				loc = in_det.as_numpy()[i]
@@ -300,6 +319,8 @@ class TritonPythonModel:
 				if biggestBox is not None:
 					out_classes.extend(np.expand_dims(classes, axis=0))
 					bbox = np.array(biggestBox)
+					bbox[:4:2] = np.clip(bbox[:4:2], a_min=0, a_max=img_info[1])
+					bbox[1:4:2] = np.clip(bbox[1:4:2], a_min=0, a_max=img_info[0])
 					boxs.append(bbox)
 					landmarks = np.array([landmarks[0], landmarks[2], landmarks[4], landmarks[6], landmarks[8],
 								landmarks[1], landmarks[3], landmarks[5], landmarks[7], landmarks[9]])
@@ -343,7 +364,7 @@ class TritonPythonModel:
 			out_tensor_box = pb_utils.Tensor(
 				"detection_retinaface_postprocessing_box", boxs.astype(box_dtype)
 			)
-
+			#print("----Duration postprocess retinaface: ", time.time()-st_time)
 			# Create InferenceResponse. You can set an error here in case
 			# there was a problem with handling this inference request.
 			# Below is an example of how you can set errors in inference

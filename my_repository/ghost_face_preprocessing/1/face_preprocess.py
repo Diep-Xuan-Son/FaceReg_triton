@@ -83,10 +83,11 @@ def preprocess(img, bbox=None, landmark=None, **kwargs):
       # src[:,1] += 45.0
     dst = landmark.astype(np.float32)
 
-    tform = trans.SimilarityTransform()
-    tform.estimate(dst, src)
-    M = tform.params[0:2,:]
+    #tform = trans.SimilarityTransform()
+    #tform.estimate(dst, src)
+    #M = tform.params[0:2,:]
     #M = cv2.estimateRigidTransform( dst.reshape(1,5,2), src.reshape(1,5,2), False)
+    M, _ = cv2.estimateAffinePartial2D(dst.reshape(1,5,2), src.reshape(1,5,2))
 
   if M is None:
     if bbox is None: #use center crop

@@ -31,7 +31,7 @@ cfg = {
     'variance': [0.1, 0.2],
     'clip': False,
     'loc_weight': 2.0,
-    'gpu_train': True,
+    'gpu_train': False,
     'batch_size': 32,
     'ngpu': 1,
     'epoch': 250,
@@ -82,11 +82,14 @@ import torch
 from models_retinaface.retinaface import RetinaFace
 #------------save model with scratch--------------
 model_new = RetinaFace(cfg=cfg, phase='test')
-model_new = load_model(model_new, "weights/mobilenet0.25_detectface.pth", False).to("cuda")
+#model_new = load_model(model_new, "weights/mobilenet0.25_detectface.pth", False).to("cuda")
+model_new = load_model(model_new, "weights/mobilenet0.25_detectface.pth", True)
+#torch.save(model_new, "model_new.pt")
+#exit()
 # # x = torch.randn(1, 3, 224, 224).to("cuda")
 # # r0,r1,r2 = model_new(x)
 # # print(r0)
-traced_model = torch.jit.trace(model_new, torch.randn(1, 3, 224, 224).to("cuda"))
+traced_model = torch.jit.trace(model_new, torch.randn(1, 3, 224, 224))
 torch.jit.save(traced_model, "model_new.pt")
 #-------------------------------------------------
 

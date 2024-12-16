@@ -25,13 +25,16 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 name: "detection_retinaface"
-platform: "pytorch_libtorch"
+#platform: "pytorch_libtorch"
+backend: "onnxruntime"
+#backend: "tensorrt"
 max_batch_size : 64
 input [
   {
     name: "inputs"
     data_type: TYPE_FP32
-    dims: [ 3, -1, -1 ]
+    dims: [ 3, 640, 640 ]
+#    allow_ragged_batch: true
   }
 ]
 
@@ -39,21 +42,21 @@ output [
   {
     name: "output_0"
     data_type: TYPE_FP32
-    dims: [ -1, 4 ]
+    dims: [ 16800, 4 ]
   }
 ]
 output [
   {
     name: "output_1"
     data_type: TYPE_FP32
-    dims: [ -1, 2 ]
+    dims: [ 16800, 2 ]
   }
 ]
 output [
   {
     name: "output_2"
     data_type: TYPE_FP32
-    dims: [ -1, 10 ]
+    dims: [ 16800, 10 ]
   }
 ]
 
@@ -69,3 +72,47 @@ dynamic_batching {
 #    gpus: [ 0 ]
 #  }
 #]
+
+# https://github.com/triton-inference-server/server/blob/main/docs/user_guide/response_cache.md
+#response_cache {
+#  enable: true
+#}
+
+# Which models will be available for inferencing
+# https://docs.nvidia.com/deeplearning/triton-inference-server/archives/triton_inference_server_220/user-guide/docs/model_configuration.html?highlight=instance_group#version-policy
+# You allow all models here, other options are `latest` and `specific`
+#version_policy: { all { } }
+#version_policy: { 
+#    specific {
+#      version: 1
+#      version: 2
+#    }
+#}
+
+#model_warmup {
+#   name: "detection_retinaface"
+#   batch_size: 64
+#   inputs: {
+#       key: "inputs"
+#       value: {
+#           data_type: TYPE_FP16
+#           dims: 3
+#           dims: 640
+#           dims: 640
+#           zero_data: true
+#       }
+#   }
+#} 
+
+#optimization {
+#  graph : {
+#    level : 1
+#  }
+#  execution_accelerators {
+#    gpu_execution_accelerator : [ {
+#      name : "tensorrt",
+#      parameters { key: "precision_mode" value: "FP16" },
+#      parameters { key: "max_workspace_size_bytes" value: "1073741824" }
+#    }]
+#  }
+#}

@@ -9,6 +9,8 @@ import threading
 import uvicorn
 import redis
 import time
+from datetime import datetime
+from string import ascii_letters, digits
 
 from fastapi import FastAPI, Request, Depends, Body
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -28,15 +30,18 @@ PATH_IMG_AVATAR = f"{str(ROOT)}/{IMG_AVATAR}"
 PATH_IMG_FAIL = f"{str(ROOT)}/static/failface"
 check_folder_exist(path_avatar=PATH_IMG_AVATAR, path_imgfail=PATH_IMG_FAIL)
 
+heart_beat_thread = threading.Thread(target=delete_file_cronj, args=(PATH_IMG_FAIL, 25200), daemon=True)
+heart_beat_thread.start()
+
 # SPOOFINGDET = SpoofDetectionRunnable(**{"model_path": f"{str(ROOT)}/weights/spoofing.pt",
 # 									"imgsz": 448,
 # 									"device": 'cpu',
 # 									"cls_names": ['authentic', 'fake']})
 SPOOFINGDET = FakeFace(f"{str(ROOT)}/weights/spoofing.onnx")
 
-TRITONSERVER_IP = os.getenv('TRITONSERVER_IP', "192.168.6.142")
+TRITONSERVER_IP = os.getenv('TRITONSERVER_IP', "192.168.6.163")
 TRITONSERVER_PORT = os.getenv('TRITONSERVER_PORT', 8001)
-REDISSERVER_IP = os.getenv('REDISSERVER_IP', "192.168.6.142")
+REDISSERVER_IP = os.getenv('REDISSERVER_IP', "192.168.6.163")
 REDISSERVER_PORT = os.getenv('REDISSERVER_PORT', 6400)
 print("----TRITONSERVER_IP: ", TRITONSERVER_IP)
 print("----TRITONSERVER_PORT: ", TRITONSERVER_PORT)
@@ -55,6 +60,9 @@ async def registerFace(params: Person = Depends(Person.as_form), images: List[Up
 	try:
 		code = params.code
 		print(code)
+		special_letters = set(code).difference(ascii_letters + digits)
+		if special_letters:
+			return {"success": False, "error_code": 8010, "error": "There are some special letters in user code!"}
 		if redisClient.hexists("FaceInfor1", code):
 			return {"success": False, "error_code": 8004, "error": "This user has been registered!"}
 
@@ -75,7 +83,7 @@ async def registerFace(params: Person = Depends(Person.as_form), images: List[Up
 			img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 			img_infor.append(img.shape[:2])
 			cv2.imwrite(f'{path_code}/face_{i+1}.jpg', img)
-			img = cv2.resize(img, (640,640), interpolation=cv2.INTER_AREA)
+			# img = cv2.resize(img, (640,640), interpolation=cv2.INTER_AREA)
 			imgs.append(img)
 		imgs = np.array(imgs)
 		img_infor = np.array(img_infor)
@@ -208,16 +216,16 @@ async def searchUser(image: UploadFile = File(...)):
 	area_img = img.shape[0]*img.shape[1]
 	w_crop = (box[2]-box[0])
 	h_crop = (box[3]-box[1])
-	if not area_img*0.1<w_crop*h_crop<area_img*0.3:
-		return {"success": False, "error_code": 8001, "error": "Face size is not true"}
+	# if not area_img*0.1<w_crop*h_crop<area_img*0.3:
+	# 	return {"success": False, "error_code": 8001, "error": "Face size is not true"}
 	#---------------spoofing--------------
 	box_expand = np.array([max(box[0]-w_crop,0), max(box[1]-h_crop,0), min(box[2]+w_crop, img.shape[1]), min(box[3]+h_crop, img.shape[0])], dtype=int)
 	result = SPOOFINGDET.inference([img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]]])[0]
 	print("---------result_spoofing", result)
 	# cv2.imwrite(f"aaa.jpg", img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]])
 	if result[1] > 0.78:
-		img_list = os.listdir("./image_spoofing")
-		cv2.imwrite(f"./image_spoofing/{len(img_list)}.jpg", img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]])
+		#img_list = os.listdir("./image_spoofing")
+		#cv2.imwrite(f"./image_spoofing/{len(img_list)}.jpg", img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]])
 		return {"success": False, "error_code": 8002, "error": "Fake face image"}
 	#//////////////////////////////////////
 	#////////////////////////////////////////////////////////////
@@ -308,6 +316,8 @@ async def searchUser(image: UploadFile = File(...)):
 	#/////////////////////////////////////////////////////////////
 	print("------Duration db: ", time.time()-t_comp)
 	if infor_face is None:
+		name_fail_img = datetime.now().strftime('%Y-%m-%d_%H-%M')
+		cv2.imwrite(f'{PATH_IMG_FAIL}/{name_fail_img}.jpg', img)
 		return {"success": False, "error_code": 8003, "error": "Don't find any user"}
 	print(infor_face)
 	infor_face = infor_face.decode("utf-8").split("@@@")
@@ -336,6 +346,73 @@ async def spoofingCheck(image: UploadFile = File(...)):
 		#//////////////////////////////////////
 	except Exception as e:
 		return {"success": False, "error": str(e)}
+
+@app.post("/api/compareFace")
+async def compareFace(image_face: UploadFile = File(...), image_identification: UploadFile = File(...)):
+	image_byte = await image_face.read()
+	nparr = np.fromstring(image_byte, np.uint8)
+	img_face = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+	image_byte = await image_identification.read()
+	nparr = np.fromstring(image_byte, np.uint8)
+	img_id = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+	t_det = time.time()
+	#---------------------------face det-------------------------
+	in_retinaface, out_retinaface = get_io_retinaface(img_face)
+	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
+	croped_image_face = results.as_numpy("croped_image")
+	if len(croped_image_face)==0:
+		return {"success": False, "error_code": 8001, "error": "Don't find any face in face photo"}
+	#cv2.imwrite("abc.jpg",croped_image_face[0])
+	box_face = results.as_numpy("box")[0]
+	box_face = box_face.astype(int)
+	w_crop = (box_face[2]-box_face[0])
+	h_crop = (box_face[3]-box_face[1])
+
+	in_retinaface, out_retinaface = get_io_retinaface(img_id)
+	results = await tritonClient.infer(model_name="detection_retinaface_ensemble", inputs=in_retinaface)
+	croped_image_id = results.as_numpy("croped_image")
+	if len(croped_image_id)==0:
+		return {"success": False, "error_code": 8001, "error": "Don't find any face in identification photo"}
+	#---------------spoofing--------------
+	box_expand = np.array([max(box_face[0]-w_crop,0), max(box_face[1]-h_crop,0), min(box_face[2]+w_crop, img_face.shape[1]), min(box_face[3]+h_crop, img_face.shape[0])], dtype=int)
+	result = SPOOFINGDET.inference([img_face[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]]])[0]
+	print("---------result_spoofing", result)
+	if result[1] > 0.85:
+		# img_list = os.listdir("./image_test")
+		# cv2.imwrite(f"./image_test/{len(img_list)}.jpg", img_spoofing)
+		return {"success": False, "error_code": 8002, "error": "Fake face image"+quality_mes}
+	#//////////////////////////////////////
+	#////////////////////////////////////////////////////////////
+	print("------Duration det: ", time.time()-t_det)
+	
+	t_reg = time.time()
+	#---------------------------face reg-------------------------
+	in_ghostface, out_ghostface = get_io_ghostface(croped_image_face)
+	results = await tritonClient.infer(model_name="recognize_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+	feature_face = results.as_numpy("feature_norm")
+	feature_face = feature_face.astype(np.float16)
+
+	in_ghostface, out_ghostface = get_io_ghostface(croped_image_id)
+	results = await tritonClient.infer(model_name="recognize_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+	feature_id = results.as_numpy("feature_norm")
+	feature_id = feature_id.astype(np.float16)
+	#////////////////////////////////////////////////////////////
+	print("------Duration reg: ", time.time()-t_reg)
+
+	t_comp = time.time()
+	#---------------------------compare face----------------------
+	print(feature_face.shape)
+	print(feature_id.shape)
+	dist = np.linalg.norm(feature_face - feature_id, axis=1)
+	similarity = (np.tanh((1.23132175 - dist) * 6.602259425) + 1) / 2
+
+	print("---------similarity: ", similarity)
+
+	if similarity < 0.75:
+		return {"success": False, "error_code": 8003, "error": "Face photo and identification photo is not similar"}
+	return {"success": True, "similarity": float(similarity)}
+	#/////////////////////////////////////////////////////////////
 
 @app.post('/healthcheck')
 async def health_check():
@@ -387,7 +464,7 @@ async def registerFacev2(params: Person = Depends(Person.as_form), images: List[
 
 		#---------------------------face reg-------------------------
 		in_ghostface, out_ghostface = get_io_ghostface(croped_image)
-		results = await tritonClient.infer(model_name="recognize_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+		results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
 		feature = results.as_numpy("feature_norm")
 		feature = feature.astype(np.float16)
 		print(feature.shape)
@@ -508,10 +585,10 @@ async def searchUserv2(image: UploadFile = File(...)):
 	area_img = img.shape[0]*img.shape[1]
 	w_crop = (box[2]-box[0])
 	h_crop = (box[3]-box[1])
-	if not area_img*0.15<w_crop*h_crop<area_img*0.3:
-		return {"success": False, "error_code": 8009, "error": "Face size is not true"}
+	# if not area_img*0.15<w_crop*h_crop<area_img*0.3:
+	# 	return {"success": False, "error_code": 8009, "error": "Face size is not true"}
 	#---------------spoofing--------------
-	box_expand = np.array([box[0]-w_crop/2, box[1]-h_crop/2, box[2]+w_crop/2, box[3]+h_crop/2], dtype=int)
+	box_expand = np.array([max(box[0]-w_crop,0), max(box[1]-h_crop,0), min(box[2]+w_crop, img.shape[1]), min(box[3]+h_crop, img.shape[0])], dtype=int)
 	result = SPOOFINGDET.inference([img[box_expand[1]:box_expand[3], box_expand[0]:box_expand[2]]])[0]
 	# result = SPOOFINGDET.inference([img])[0]
 	print("---------result_spoofing", result)
@@ -526,7 +603,7 @@ async def searchUserv2(image: UploadFile = File(...)):
 	t_reg = time.time()
 	#---------------------------face reg-------------------------
 	in_ghostface, out_ghostface = get_io_ghostface(croped_image)
-	results = await tritonClient.infer(model_name="recognize_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+	results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
 	feature = results.as_numpy("feature_norm")
 	feature = feature.astype(np.float16)
 	#////////////////////////////////////////////////////////////
@@ -636,7 +713,7 @@ async def checkFailFacev2(params: Person = Depends(Person.as_form), images: List
 
 	#---------------------------face reg-------------------------
 	in_ghostface, out_ghostface = get_io_ghostface(croped_image)
-	results = await tritonClient.infer(model_name="recognize_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
+	results = await tritonClient.infer(model_name="ghost_face_nodet_ensemble", inputs=in_ghostface, outputs=out_ghostface)
 	feature = results.as_numpy("feature_norm")
 	feature = feature.astype(np.float16)
 	print(feature.shape)
@@ -736,6 +813,7 @@ if __name__=="__main__":
 8007: "Too many faces in this image"
 8008: error system
 8009: "Face size is not true"
+8010: "There are some special letters in user code!"
 """
 
 

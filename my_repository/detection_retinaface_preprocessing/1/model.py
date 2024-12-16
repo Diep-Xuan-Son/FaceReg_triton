@@ -37,7 +37,7 @@ import cv2
 # and converting Triton input/output types to numpy types.
 import triton_python_backend_utils as pb_utils
 from PIL import Image
-
+import time
 
 class TritonPythonModel:
 	"""Your Python model must use the same class name. Every Python model
@@ -116,6 +116,7 @@ class TritonPythonModel:
 			)
 			img_out = []
 			img_info = []
+			st_time = time.time()
 			def image_loader(img):
 				im_height, im_width, _ = img.shape
 				scale = [im_width, im_height, im_width, im_height]
@@ -148,7 +149,7 @@ class TritonPythonModel:
 			out_tensor_1 = pb_utils.Tensor(
 				"detection_retinaface_preprocessing_output1", img_info.astype(output1_dtype)
 			)
-
+			#print("----Duration preprocess retinaface: ", time.time()-st_time)
 			# Create InferenceResponse. You can set an error here in case
 			# there was a problem with handling this inference request.
 			# Below is an example of how you can set errors in inference

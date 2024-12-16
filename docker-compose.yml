@@ -12,6 +12,8 @@ services:
     volumes:
       - ./data:/data
       - ./config/redis1.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      mynetwork_bridge:
     profiles:
       - redis
     command: redis-server /usr/local/etc/redis/redis.conf
@@ -28,9 +30,11 @@ services:
   #   command: redis-server /usr/local/etc/redis/redis.conf
 
   triton_server:
-    image: mq/tritonserver
+    image: dixuson/tritonserver
     container_name: triton-server
     restart: always
+    environment:
+      - PYTHONIOENCODING=UTF-8
     build:
       dockerfile: Dockerfile_triton
       shm_size: '4gb'
@@ -43,7 +47,7 @@ services:
       - .:/workspace/
       - ./my_repository:/models
       - ./requirements.txt:/opt/tritonserver/requirements.txt
-      - ./son_triton.tar.gz:/opt/tritonserver/env/son_triton.tar.gz
+      # - ./son_triton.tar.gz:/opt/tritonserver/env/son_triton.tar.gz
     networks:
       mynetwork_bridge:
     profiles:
@@ -51,13 +55,13 @@ services:
     command: tritonserver --model-repository=/models --model-control-mode=poll --repository-poll-secs=5
 
   controller_server:
-    image: mq/controller_ai
+    image: dixuson/facereg_triton
     container_name: controller_ai
     restart: always
     environment:
-      - TRITONSERVER_IP=192.168.6.142
+      - TRITONSERVER_IP=triton_server
       - TRITONSERVER_PORT=8001
-      - REDISSERVER_IP=192.168.6.142
+      - REDISSERVER_IP=redis1
       - REDISSERVER_PORT=6400
     build:
       dockerfile: Dockerfile_controller
@@ -67,14 +71,14 @@ services:
       - redis1
       - triton_server
     volumes:
-      - ./static:/controller_server/static
-    #   - .:/workspace/
+      - ./src/static:/controller_server/static
+    #   - ./src:/workspace/
     networks:
       mynetwork_bridge:
     profiles:
       - controller_ai
-    # command: python3 controller.py
-    command: gunicorn -w 1 -b 0.0.0.0:8421 controller:app
+    # command: python3.11 controller.py
+    command: uvicorn --workers 1 --host 0.0.0.0 --port 8421 controller:app
 
 
 # docker compose -f docker-compose.yml --profile dev1 up -d

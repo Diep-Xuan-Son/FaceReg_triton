@@ -1,4 +1,4 @@
-from typing import List, Union, Annotated
+from typing import List, Union
 from pydantic import BaseModel, model_validator
 from fastapi import Query, File, UploadFile
 import json

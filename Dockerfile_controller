@@ -1,34 +1,29 @@
-FROM nvidia/cuda:12.0.1-base-ubuntu20.04
-FROM ubuntu:20.04
+FROM mosaicml/pytorch:2.4.1_cpu-python3.11-ubuntu20.04
 
-ARG DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Ho_Chi_Minh
+RUN apt-get update 
+RUN apt-get install -y \
+        ffmpeg \
+        nano \
+        curl
 
-RUN apt-get update && \
-	apt-get install -y python3.10 && \
-	apt-get install -y \
-			python3-pip \
-			python3-dev \
-			ffmpeg \
-			nano
-
-RUN python3 -m pip install --upgrade pip
+RUN pip install --upgrade pip
 
 WORKDIR /controller_server
 COPY requirements.txt /controller_server/requirements.txt
 COPY requirements_serving.txt /controller_server/requirements_serving.txt
 
-RUN python3 -m pip --no-cache-dir install -r /controller_server/requirements.txt
-RUN python3 -m pip --no-cache-dir install -r /controller_server/requirements_serving.txt
+RUN python3.11 -m pip uninstall -y numpy
+RUN python3.11 -m pip --no-cache-dir install -r /controller_server/requirements.txt
+RUN python3.11 -m pip --no-cache-dir install -r /controller_server/requirements_serving.txt
 
 COPY ./src /controller_server
 
-ENV TRITONSERVER_IP = 192.168.6.142
-ENV TRITONSERVER_PORT = 8001
-ENV REDISSERVER_IP = 192.168.6.142
-ENV	REDISSERVER_PORT = 6400
+ENV TRITONSERVER_IP=triton_server
+ENV TRITONSERVER_PORT=8001
+ENV REDISSERVER_IP=redis1
+ENV REDISSERVER_PORT=6400
 
-# CMD ["python3", "controller.py"]
+# CMD ["python3.11", "controller.py"]
 
 # docker build -t mq/controller_ai --load --rm -f Dockerfile_controller .
 # docker run -d -p 8421:8421 --name controller_ai mq/controller_ai

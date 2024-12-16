@@ -25,7 +25,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 name: "ghost_face_extract_feature"
-platform: "tensorflow_savedmodel"
+#platform: "tensorflow_savedmodel"
+backend: "onnxruntime"
 max_batch_size : 64
 input [
   {

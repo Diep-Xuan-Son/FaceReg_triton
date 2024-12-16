@@ -6,7 +6,12 @@ import numpy as np
 class BaseOnnx(threading.Thread):
     def __init__(self, path):
         threading.Thread.__init__(self)
-        self.session = onnxruntime.InferenceSession(path, providers=['CPUExecutionProvider'])
+        devices = onnxruntime.get_available_providers()
+        if 'CUDAExecutionProvider' in devices:
+            devices = ['CPUExecutionProvider', 'CUDAExecutionProvider']
+        else:
+            devices = ['CPUExecutionProvider']
+        self.session = onnxruntime.InferenceSession(path, providers=devices)
 
     def pre(self, input_feed):
         for key in input_feed:

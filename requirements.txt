@@ -1,7 +1,8 @@
-torchvision
+#torchvision
 opencv-python-headless
 scikit-learn
 scikit-image
+numpy
 tritonclient[all]
 
 linformer
@@ -11,4 +12,4 @@ pillow
 
 redis
 onnx
-onnxruntime
+onnxruntime-gpu==1.19.0 #match with cuda 12x and cudnn 9.x
