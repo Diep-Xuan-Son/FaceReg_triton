@@ -131,7 +131,9 @@ class TritonPythonModel:
 		self.clip = False
 		self.conf_thres = 0.75
 		self.iou_thres = 0.25
-		self.imagesz = 640
+		self.imagesz = [640, 640]
+		priorbox = PriorBox(min_sizes=self.min_sizes, steps=self.steps, clip=self.clip, image_size=self.imagesz)
+		self.priors = priorbox.forward()
 
 	def py_cpu_nms(self, dets, thresh):
 		x1 = dets[:, 0]

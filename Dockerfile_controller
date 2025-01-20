@@ -25,6 +25,6 @@ ENV REDISSERVER_PORT=6400
 
 # CMD ["python3.11", "controller.py"]
 
-# docker build -t mq/controller_ai --load --rm -f Dockerfile_controller .
-# docker run -d -p 8421:8421 --name controller_ai mq/controller_ai
-# docker run -d -p 8421:8421 -v %cd%/src/weights:/controller_server/weights --name controller_ai mq/controller_ai
+# docker build -t dixuson/facereg_triton --load --rm -f Dockerfile_controller .
+# docker run -d -p 8421:8421 --name controller_ai dixuson/facereg_triton
+# docker run -d -p 8421:8421 -v %cd%/src/weights:/controller_server/weights --name controller_ai dixuson/facereg_triton

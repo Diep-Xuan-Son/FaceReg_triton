@@ -3,5 +3,5 @@
 /src/image_test
 /src/static/*
 
-
+__pycache__/
 # git rm --ignore-unmatch --cached */__pycache__/*

@@ -1,1 +1,0 @@
-python -m tf2onnx.convert --saved-model model.savedmodel --output model.onnx --opset 13
